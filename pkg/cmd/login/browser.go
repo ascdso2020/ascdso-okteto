@@ -22,6 +22,9 @@ import (
 	"net/http"
 	"net/url"
 	"text/template"
+
+	"github.com/okteto/okteto/pkg/okteto"
+	"github.com/okteto/okteto/pkg/types"
 )
 
 // Handler handles the authentication using a browser
@@ -30,8 +33,8 @@ type Handler struct {
 	state    string
 	baseURL  string
 	port     int
-	response chan string
 	errChan  chan error
+	userChan chan *types.User
 }
 
 // OriginData
@@ -41,7 +44,7 @@ type OriginData struct {
 	Message string
 }
 
-func (h *Handler) handle() http.Handler {
+func (h *Handler) handler(ctx context.Context) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
 		s := r.URL.Query().Get("state")
@@ -58,13 +61,20 @@ func (h *Handler) handle() http.Handler {
 			Message: "Close this window and go back to your terminal",
 		}
 
-		htmlTemplate := template.Must(template.New("response").Parse(loginHTMLTemplate))
+		var htmlTemplate *template.Template
+		authenticatedUser, err := okteto.Auth(ctx, code, h.baseURL)
+		if err != nil {
+			htmlTemplate = template.Must(template.New("response").Parse(successLoginHTMLTemplate))
+			h.errChan <- err
+		} else {
+			htmlTemplate = template.Must(template.New("response").Parse(successLoginHTMLTemplate))
+			h.userChan <- authenticatedUser
+		}
+
 		if err := htmlTemplate.Execute(w, data); err != nil {
 			h.errChan <- fmt.Errorf("failed to write to the response: %s", err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-
-		h.response <- code
 	}
 
 	return http.HandlerFunc(fn)

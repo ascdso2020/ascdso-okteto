@@ -13,7 +13,7 @@
 
 package login
 
-var loginHTMLTemplate = `<!DOCTYPE html>
+var successLoginHTMLTemplate = `<!DOCTYPE html>
 <html>
   <head>
     <meta {{.Meta}}>

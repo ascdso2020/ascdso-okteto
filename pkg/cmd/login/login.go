@@ -25,7 +25,6 @@ import (
 	oktetoErrors "github.com/okteto/okteto/pkg/errors"
 	oktetoLog "github.com/okteto/okteto/pkg/log"
 	"github.com/okteto/okteto/pkg/model"
-	"github.com/okteto/okteto/pkg/okteto"
 	"github.com/okteto/okteto/pkg/types"
 	"github.com/skratchdot/open-golang/open"
 )
@@ -113,7 +112,7 @@ func StartWithBrowser(ctx context.Context, u string) (*Handler, error) {
 		ctx:      context.Background(),
 		state:    state,
 		errChan:  make(chan error, 2),
-		response: make(chan string, 2),
+		userChan: make(chan *types.User, 1),
 	}
 
 	return handler, nil
@@ -123,23 +122,19 @@ func StartWithBrowser(ctx context.Context, u string) (*Handler, error) {
 // EndWithBrowser finishes the browser based auth
 func EndWithBrowser(ctx context.Context, h *Handler) (*types.User, error) {
 	go func() {
-		http.Handle("/authorization-code/callback", h.handle())
+		http.Handle("/authorization-code/callback", h.handler(ctx))
 		h.errChan <- http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", h.port), nil)
 	}()
 
 	ticker := time.NewTicker(5 * time.Minute)
-	var code string
-
 	select {
 	case <-ticker.C:
 		h.ctx.Done()
 		return nil, fmt.Errorf("authentication timeout")
-	case code = <-h.response:
-		break
 	case e := <-h.errChan:
 		h.ctx.Done()
 		return nil, e
+	case u := <-h.userChan:
+		return u, nil
 	}
-
-	return okteto.Auth(ctx, code, h.baseURL)
 }
